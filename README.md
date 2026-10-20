@@ -1,5 +1,7 @@
 # FOMO Companion
 
+**简体中文** | [English](README.en.md)
+
 用于 [FOMO](https://fomo.family) 的 Chrome 浏览器扩展，提供真实账户持仓、实时行情、限价条件单、止盈止损、交易日志和飞书通知。
 
 基于 WXT、React、TypeScript 和 Manifest V3。支持中文与 English，当前版本 **v0.8.0**。
