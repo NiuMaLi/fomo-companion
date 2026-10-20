@@ -1,0 +1,10 @@
+{
+  "language": "zh-CN",
+  "automatic": false,
+  "realTrading": false,
+  "maxPriceAgeMs": 15000,
+  "notifications": {
+    "ordersWebhook": "",
+    "alertsWebhook": ""
+  }
+}

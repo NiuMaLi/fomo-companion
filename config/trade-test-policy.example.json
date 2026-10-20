@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "scope": "real-order-testing-only",
+  "testPolicy": {
+    "enabled": true,
+    "networkId": 1399811149,
+    "tokenAddress": "So11111111111111111111111111111111111111112",
+    "maxSolExposureUsd": "10",
+    "suggestedInitialBuyUsd": "9",
+    "fallbackMinimumBuyUsd": "2",
+    "fallbackMinimumSellUsd": "2"
+  }
+}
