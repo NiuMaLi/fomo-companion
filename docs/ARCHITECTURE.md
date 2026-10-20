@@ -12,7 +12,7 @@ src/
   adapters/fomo/            # HTTP、认证、行情、报价、签名、确认
   trading/                  # 状态机、触发、风险检查、数量预留
   storage/                  # IndexedDB、迁移、事务
-  notifications/            # 飞书、告警队列、脱敏
+  notifications/            # 四平台机器人协议、成交／告警去重、脱敏
   shared/                   # 类型、消息协议、金额计算
   components/               # 表单、价格与状态展示
 config/
@@ -115,3 +115,9 @@ page-executor 根据 /swaps/v3 的来源选择直接 Solana 或 native-runtime�
 `Draft.slippageBps` 为可选整数（0～500，单位 bps）。新建单将缺省值持久化为 0，表示关闭；协调器只读取订单值，不读取旧 `Settings.slippageBps`。旧设置字段仅兼容读取，无默认值，旧全局编辑命令已移除。保护单继承父单值。日志快照白名单增加滑点，旧快照缺失显示未记录。
 
 关闭时 prepare 的可选滑点参数为空、`/swaps/v3` 请求省略 `slippageBps`，两个报价解析入口均不将 0 当成零容忍。开启时沿用平台返回滑点不超过本单上限与保守报价校验；关闭后限价目标仍检查预期报价，止损无本地报价偏离上限。平台构建交易中的固有限制不可由插件关闭，签名校验和报价有效性／余额／5%价格影响校验不受影响。数据库仍为 v4。
+
+## v0.9.0 通知渠道
+
+`settings.notifications` 使用独立的 `orders` 与 `alerts` 目标，每个目标用 `provider` 区分 `disabled`、`feishu`、`dingtalk`、`wecom`、`telegram`。前三个机器人平台使用其官方 HTTPS Webhook；飞书和钉钉支持可选 HMAC 加签；Telegram 使用 Bot Token 与 Chat ID，仅调用 `sendMessage`。边界 Schema 兼容旧 `ordersWebhook`／`alertsWebhook`，读取为飞书目标，保存时写新结构。数据库仍为 v4，不归档订单、不重置交易或监控开关。
+
+`notifications/notify.ts` 保留原来的通知正文、系统本地时区、成交去重键及五分钟告警冷却。`notifications/transports.ts` 仅负责平台请求格式、签名与成功响应判定。协调器通过目标是否已配置决定是否记录待发送成交，不依赖某个平台的地址字段。去重记录仍先于请求落盘，切换平台不绕过去重；无配置时不建待补发标记。发送异常只记通用失败日志，不保存请求地址、密钥或平台原始响应，不递归告警。

@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { database, readSettings, type DB } from '../src/storage/database';
 import { DEFAULT_SETTINGS, notificationsSchema } from '../src/shared/model';
-import { notify } from '../src/notifications/feishu';
+import { notify } from '../src/notifications/notify';
 const ordersWebhook = 'https://open.feishu.cn/open-apis/bot/v2/hook/test-orders-channel';
 const alertsWebhook = 'https://open.feishu.cn/open-apis/bot/v2/hook/test-alerts-channel';
 const alert = { channel: 'alerts' as const, code: 'auth-expired', message: '登录凭据失效' };
@@ -74,7 +74,7 @@ it('校验飞书地址并持久保存；清空可以关闭', async () => {
   const notifications = notificationsSchema.parse({ ordersWebhook: ' ' + ordersWebhook + ' ', alertsWebhook: '' });
   await db.put('state', { ...DEFAULT_SETTINGS, notifications }, 'settings');
   const name = db.name; db.close(); db = await database(name);
-  expect((await readSettings(db)).notifications).toEqual({ ordersWebhook, alertsWebhook: '' });
+  expect((await readSettings(db)).notifications).toEqual({ orders: { provider: 'feishu', webhook: ordersWebhook, secret: '' }, alerts: { provider: 'feishu', webhook: '', secret: '' } });
 });
 
 it('成交通知包含实际价格、数量、价值和零剩余仓位；未知不冒充零', async () => {

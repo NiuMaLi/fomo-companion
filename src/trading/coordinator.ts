@@ -3,7 +3,8 @@ import { sameAsset, type Order, type Price, type Session } from '../shared/model
 import { ExecutionError, type ExecutionRequest, type ExecutionResult } from '../shared/execution';
 import { readSettings, type DB } from '../storage/database';
 import { orderSnapshot, writeLog } from '../storage/logs';
-import { notify } from '../notifications/feishu';
+import { notify } from '../notifications/notify';
+import { notificationEnabled } from '../shared/notifications';
 import { fresh, triggered } from './engine';
 import { protectionOrders } from './protection';
 
@@ -75,7 +76,7 @@ export function createCoordinator(options: {
         const confirmed: Order = { ...old, status: 'confirmed', reason: undefined, confirmedAt: Date.now(), executedAt: Date.now(), executionPrice: result.priceUsd,
           transactionHash: result.transactionHash ?? old.transactionHash, executionReference: result.reference ?? old.executionReference,
           fillQuantity: result.quantity, fillUsd: result.amountUsd, remainingQuantity: result.remainingQuantity,
-          notifyOrder: !!settings.notifications.ordersWebhook, notificationHandled: !settings.notifications.ordersWebhook };
+          notifyOrder: notificationEnabled(settings.notifications.orders), notificationHandled: !notificationEnabled(settings.notifications.orders) };
         await tx.objectStore('orders').put(confirmed);
         for (const child of protectionOrders(confirmed, confirmed.confirmedAt!)) {
           await tx.objectStore('orders').put(child);

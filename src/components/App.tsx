@@ -1,5 +1,9 @@
 import { LanguageContext, cachedLanguage, useLanguage } from './Language';
 import { OrderLogDetails } from './OrderLogDetails';
+import { NotificationChannel } from './NotificationChannel';
+import { notificationsSchema } from '../shared/notifications';
+import type { NotificationTarget } from '../shared/notifications';
+import type { NotificationTestResult } from '../notifications/notify';
 import { dateTime, translator, orderKinds as kinds, orderStates as states, type Language } from '../shared/i18n';
 import { transactionUrl } from '../shared/chains';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
@@ -32,6 +36,14 @@ export function App() {
     const lastSelection = useRef<string | undefined>(undefined);
     const [now, setNow] = useState(Date.now());
     const extension = typeof chrome !== 'undefined' && !!chrome.runtime?.id;
+    async function testNotification(channel: 'orders' | 'alerts', target: NotificationTarget): Promise<NotificationTestResult> {
+        if (!extension) return { sent: false, message: '请在 Chrome 中加载扩展后测试通知' };
+        try {
+            const result = await chrome.runtime.sendMessage({ type: 'notification-test', channel, target });
+            if (result?.ok && result.test && typeof result.test.sent === 'boolean' && typeof result.test.message === 'string') return result.test;
+        } catch { /* Do not display raw runtime errors or notification credentials. */ }
+        return { sent: false, message: '无法测试通知，请检查配置或重新打开扩展' };
+    }
     async function request(command: object, silent = false) {
         if (!extension) {
             if (!silent)
@@ -108,7 +120,7 @@ export function App() {
     useEffect(() => {
         if (!notificationsDirty)
             setNotificationDraft(view.settings.notifications);
-    }, [view.settings.notifications.ordersWebhook, view.settings.notifications.alertsWebhook, notificationsDirty]);
+    }, [view.settings.notifications, notificationsDirty]);
     function exportLogs() {
         const records = view.logs.map(({ accountId: _, ...record }) => ({ ...record, displayMessage: t(record.message) }));
         const url = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 2, language, exportedAt: new Date().toISOString(), logs: records }, null, 2)], { type: 'application/json' }));
@@ -162,17 +174,20 @@ export function App() {
           {(log.symbol || log.orderId) && <small>{log.symbol} {log.orderId && t("· 订单 {0}", { 0: log.orderId.slice(0, 8) })}</small>}
           <OrderLogDetails log={log} current={view.orders.find(order => order.id === log.orderId)}/>
         </article>)}<button className="secondary" disabled={!view.logs.length} onClick={exportLogs}>{t("导出脱敏日志")}</button><p className="subnote">{t("目标价触达、报价和交易提交均不代表成交。只有收到真实成交确认后才发送订单通知。")}</p></>}
-      {tab === 'settings' && <><div className="section-title"><h1>{t("运行设置")}</h1><span>v0.8.0</span></div>
+      {tab === 'settings' && <><div className="section-title"><h1>{t("运行设置")}</h1><span>v0.9.0</span></div>
         <div className="setting-row"><div><strong>{t("真实下单")}</strong><p>{view.settings.realTrading ? t("已开启，触发后提交真实交易") : t("已关闭，价格触达只记录日志")}</p></div><button className="switch" role="switch" aria-label={t("真实下单")} aria-describedby="execution-status" aria-checked={view.settings.realTrading} disabled={busy || !view.execution.available && !view.settings.realTrading} onClick={() => void run({ type: 'real-trading', enabled: !view.settings.realTrading })}><span /></button></div>
         <p id="execution-status" className="subnote">{t(view.execution.reason)}{t("。关闭开关可阻止后续提交，已上链交易继续核对结果。")}</p>
 
-        <form className="notifications-form" onSubmit={async (event) => { event.preventDefault(); if (await run({ type: 'notifications', notifications: notificationDraft })) {
+        <form className="notifications-form" onSubmit={async (event) => { event.preventDefault(); if (!notificationsSchema.safeParse(notificationDraft).success) { setError('请检查通知渠道配置'); return; } if (await run({ type: 'notifications', notifications: notificationDraft })) {
             setNotificationsDirty(false);
             setNotice("通知配置已保存");
         } }}>
-          <h2>{t("飞书通知")}</h2><p className="subnote">{t("两个地址分别配置；留空不发送，也不补发此前的通知。")}</p>
-          <label className="field-label" htmlFor="orders-webhook">{t("订单通知")}<span>{t("订单确认成交后")}</span></label><div className="size-input"><input id="orders-webhook" type="url" autoComplete="off" spellCheck={false} value={notificationDraft.ordersWebhook} placeholder={t("留空关闭订单通知")} onChange={event => { setNotificationsDirty(true); setNotificationDraft({ ...notificationDraft, ordersWebhook: event.target.value }); }}/></div>
-          <label className="field-label" htmlFor="alerts-webhook">{t("告警通知")}<span>{t("Token 失效 / 接口失败")}</span></label><div className="size-input"><input id="alerts-webhook" type="url" autoComplete="off" spellCheck={false} value={notificationDraft.alertsWebhook} placeholder={t("留空关闭告警通知")} onChange={event => { setNotificationsDirty(true); setNotificationDraft({ ...notificationDraft, alertsWebhook: event.target.value }); }}/></div>
+          <h2>{t("通知")}</h2><p className="subnote">{t("订单与告警可分别选择渠道；未配置不发送，也不补发此前的通知。")}</p>
+          <p className="subnote">{t("切换渠道会清空该类通知的输入，保存后生效。")}</p>
+          {(['orders', 'alerts'] as const).map(channel => <NotificationChannel key={channel} channel={channel} value={notificationDraft[channel]} disabled={busy}
+            onTest={target => testNotification(channel, target)}
+            onChange={value => { setNotificationsDirty(true); setNotificationDraft(current => ({ ...current, [channel]: value })); }}/>
+          )}
           <button className="secondary" type="submit" disabled={busy || !notificationsDirty}>{t("保存通知配置")}</button>
         </form>
         <button className="secondary" onClick={exportOrders}>{t("导出脱敏订单")}</button><p className="subnote">{t("日志面板和导出文件不包含 Token、Cookie、账户 ID 或通知地址。旧版模拟条件单仅保留历史，不会转为真实订单。")}</p>

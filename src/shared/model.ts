@@ -1,4 +1,6 @@
 import { z } from 'zod';
+import { notificationsSchema, emptyNotificationTarget, notificationTargetSchema } from './notifications';
+export { notificationsSchema } from './notifications';
 
 // Both MV3 extension pages and FOMO's MAIN world forbid runtime code generation.
 z.config({ jitless: true });
@@ -37,15 +39,6 @@ export const draftSchema = z.object({
   slippageBps: z.number().int().min(0).max(500).optional(),
   protection: z.object({ takeProfit: protectionLeg.optional(), stopLoss: protectionLeg.optional() }).optional(),
 });
-const webhook = z.string().trim().max(500).refine(value => {
-  if (!value) return true;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname === 'open.feishu.cn' && !url.port &&
-      !url.username && !url.password && !url.search && !url.hash && /^\/open-apis\/bot\/v2\/hook\/[A-Za-z0-9_-]{10,200}$/.test(url.pathname);
-  } catch { return false; }
-}, '请输入有效的飞书自定义机器人 Webhook，或留空关闭通知');
-export const notificationsSchema = z.object({ ordersWebhook: webhook, alertsWebhook: webhook });
 export const settingsSchema = z.object({
   automatic: z.boolean(), realTrading: z.boolean(), notifications: notificationsSchema,
   language: z.enum(['zh-CN', 'en']).default('zh-CN'),
@@ -88,7 +81,7 @@ export type View = {
   orders: Order[]; logs: Log[]; prices: Record<string, Price>; execution: { available: boolean; reason: string; networks: number[] };
 };
 export const EXECUTION = { available: false, networks: [] as number[], reason: '等待 FOMO 登录钱包就绪' };
-export const DEFAULT_SETTINGS: Settings = { automatic: false, realTrading: false, language: 'zh-CN', notifications: { ordersWebhook: '', alertsWebhook: '' }, maxPriceAgeMs: 15000 };
+export const DEFAULT_SETTINGS: Settings = { automatic: false, realTrading: false, language: 'zh-CN', notifications: { orders: emptyNotificationTarget('feishu'), alerts: emptyNotificationTarget('feishu') }, maxPriceAgeMs: 15000 };
 
 export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('view') }),
@@ -98,6 +91,7 @@ export const commandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('cancel'), id: z.string() }),
   z.object({ type: z.literal('real-trading'), enabled: z.boolean() }),
   z.object({ type: z.literal('notifications'), notifications: notificationsSchema }),
+  z.object({ type: z.literal('notification-test'), channel: z.enum(['orders', 'alerts']), target: notificationTargetSchema }),
   z.object({ type: z.literal('refresh') }),
 ]);
 export const feedSchema = z.discriminatedUnion('type', [

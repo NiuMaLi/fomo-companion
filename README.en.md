@@ -2,9 +2,9 @@
 
 [简体中文](README.md) | **English**
 
-A Chrome extension for [FOMO](https://fomo.family), with real account positions, live market data, conditional limit orders, take-profit and stop-loss orders, trade logs, and Feishu notifications.
+A Chrome extension for [FOMO](https://fomo.family), with real account positions, live market data, conditional limit orders, take-profit and stop-loss orders, trade logs, and bot notifications.
 
-Built with WXT, React, TypeScript, and Manifest V3. Supports Simplified Chinese and English. Current version: **v0.8.0**.
+Built with WXT, React, TypeScript, and Manifest V3. Supports Simplified Chinese and English. Current version: **v0.9.0**.
 
 > This is an unofficial extension that depends on FOMO's current web interfaces and wallet capabilities. Live execution paths are implemented, but complete live buy/sell validation on each network, extended unattended operation, and recovery after browser exit have not yet been verified. Read the execution notes and test records before use.
 
@@ -18,8 +18,8 @@ Built with WXT, React, TypeScript, and Manifest V3. Supports Simplified Chinese 
 - **Per-order slippage**: Maximum slippage is optional. Leaving it blank or setting it to 0 disables the extension's slippage protection without applying a default. Attached protection orders inherit their parent order's setting.
 - **Live trading switch**: When disabled, the extension only saves orders and logs price triggers. It does not request quotes, sign or broadcast transactions, or create simulated fills or positions.
 - **Orders and logs**: Persisted locally, with category filters, order snapshots at each event, full transaction hashes, and redacted JSON exports.
-- **Feishu notifications**: Separate webhooks for confirmed fills and system alerts. No messages are sent when a webhook is not configured.
-- **Language switching**: Saves your language preference and applies it to the interface, historical log display, and newly sent Feishu messages.
+- **Notifications**: Supports Feishu, DingTalk, WeCom, and Telegram bots. Select a platform and destination independently for confirmed fills and system alerts. Unconfigured notifications are disabled.
+- **Language switching**: Saves your language preference and applies it to the interface, historical log display, and newly sent notifications.
 
 Integrates with FOMO's current Ethereum, BNB, Monad, Robinhood, Arc, Base, and Solana spot networks, using available platform quotes and native execution routes. The platform may reject trades because of balances, liquidity, trade size, network conditions, or wallet state. Network support does not guarantee that every token can be traded.
 
@@ -45,7 +45,7 @@ npm ci
 npm run build
 ```
 
-Load `.output/chrome-mv3` in Chrome. Run `npm run zip` to generate `.output/fomo-companion-0.8.0-chrome.zip`.
+Load `.output/chrome-mv3` in Chrome. Run `npm run zip` to generate `.output/fomo-companion-0.9.0-chrome.zip`.
 
 To update, replace the files in the existing installation directory, reload the extension on the extensions page, and refresh FOMO. Avoid uninstalling and reinstalling: uninstalling or clearing extension data may delete local orders, logs, and settings.
 
@@ -76,20 +76,24 @@ Attached take-profit and stop-loss orders use the actual quantity bought by thei
 
 The extension has no SOL-only restriction, fixed 2 USDC minimum trade size, or 10 USDC position cap. Trades must still satisfy platform rules, token precision, actual balances, and overselling checks. The live development test policy is documented separately and is not a product restriction.
 
-### Feishu notifications
+### Notifications
 
-In Settings, configure and save two custom bot webhooks under Feishu notifications:
+In Settings → Notifications, select and save a delivery channel separately for orders and alerts. Each can use a different platform or bot:
 
 | Channel | Content |
 | --- | --- |
 | Order notifications | Confirmed fills: pair, side, price, quantity, value, remaining position at reconciliation, order ID, and transaction hash |
 | Alert notifications | System issues such as expired login credentials or failed API calls, with cooldown-based deduplication for the same alert type |
 
-An empty webhook disables its channel. Channels do not fall back to each other, and messages from periods without a configured webhook are not sent later. Feishu custom bot webhooks are supported; additional signing-secret configuration is not supported. If a balance cannot be reconciled, it is shown as unknown rather than zero.
+Feishu, DingTalk, and WeCom use bot webhooks; Feishu and DingTalk also support optional signing secrets. Telegram uses a Bot Token and Chat ID. Select Disabled or leave the configuration blank to disable a notification type. Channels do not fall back to each other, and messages from periods without configuration are not sent later. If a balance cannot be reconciled, it is shown as unknown rather than zero.
+
+Expand Setup guide under each notification type in Settings, or read the full [bot notification setup guide](docs/NOTIFICATIONS.en.md) for platform setup, field examples, and troubleshooting. Existing Feishu webhook configurations remain compatible without changing trading switches or orders.
+
+Click Send test notification to test the current inputs without saving or connecting to FOMO. Results appear below the corresponding configuration, and attempts are recorded in operation logs. Save the configuration after a successful test. Test messages are explicitly labeled and do not affect deduplication of real notifications.
 
 Notification timestamps use the system time zone of the device running the extension and include the UTC offset, for example `2026-10-21 07:30:00 GMT+08:00`. Switching languages does not change the time zone. Fill notifications show the fill confirmation time; alert notifications show the alert time.
 
-Configure webhooks directly in the extension. `config/local.example.json` only illustrates the settings structure and **is not loaded automatically**.
+Configure notification credentials directly in the extension. They are stored only in the extension's local database and excluded from order and log exports. `config/local.example.json` only illustrates the settings structure and **is not loaded automatically**.
 
 ## Development
 
@@ -102,7 +106,7 @@ npm run build     # Chrome production build
 npm run zip       # Distribution ZIP
 ```
 
-Automated tests use synthetic data and mocks. They do not require a FOMO login, real funds, or Feishu webhooks. Coverage includes market data isolation, order reservations, per-order slippage, mutually exclusive protection orders, duplicate execution prevention, fill reconciliation, database compatibility, notifications, logs, and internationalization.
+Automated tests use synthetic data and mocks. They do not require a FOMO login, real funds, or bot credentials. Coverage includes market data isolation, order reservations, per-order slippage, mutually exclusive protection orders, duplicate execution prevention, fill reconciliation, database compatibility, notifications, logs, and internationalization.
 
 Browser probes in `scripts/` are development diagnostics, not routine test or extension runtime dependencies. Read each script and the [verification records](docs/fomo/VERIFICATION.md) before running it, and use only dedicated test tabs. Real signing, broadcasting, and notification acceptance tests require separate authorization and must follow the test policy.
 
@@ -116,7 +120,7 @@ src/
   shared/             Data models, protocols, networks, and shared logic
   storage/            IndexedDB, logs, and legacy data compatibility
   trading/            Conditional orders, quotes, signing, execution, and fill reconciliation
-  notifications/      Feishu notifications
+  notifications/      Bot notifications and platform protocol adapters
 config/               Credential-free settings and live test policy examples
 tests/                Deterministic tests
 scripts/              Development diagnostics
@@ -134,9 +138,10 @@ For features and fixes, run type checks, tests, and a production build. Changes 
 
 ## Documentation
 
-The detailed documents linked below are currently in Simplified Chinese.
+The notification setup guide is available in English. The other detailed documents linked below are currently in Simplified Chinese.
 
 - [Installation and detailed usage](docs/INSTALL.md)
+- [Bot notification setup guide](docs/NOTIFICATIONS.en.md)
 - [Architecture and order recovery](docs/ARCHITECTURE.md)
 - [Authentication and token boundaries](docs/fomo/AUTH.md)
 - [HTTP interface integration](docs/fomo/HTTP.md)

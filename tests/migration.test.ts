@@ -34,6 +34,6 @@ it('v3 升级保留通知配置、归档待触发单并关闭实盘和监控', a
   old.close(); const db = await database(name);
   expect((await db.get('orders', 'old'))?.status).toBe('archived');
   expect(await readSettings(db)).toMatchObject({ automatic: false, realTrading: false, slippageBps: undefined,
-    notifications: { ordersWebhook: 'https://open.feishu.cn/open-apis/bot/v2/hook/test-address' } });
+    notifications: { orders: { provider: 'feishu', webhook: 'https://open.feishu.cn/open-apis/bot/v2/hook/test-address' } } });
   db.close();
 });

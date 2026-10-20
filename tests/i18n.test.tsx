@@ -32,7 +32,7 @@ it('翻译新提示和历史动态日志，保留数值、参数和中文原始�
 });
 it('界面直接使用的中文词条均有英文翻译，插值占位符不丢失', () => {
   const missing: string[] = [];
-  for (const file of ['src/components/App.tsx', 'src/components/OrderLogDetails.tsx', 'src/notifications/feishu.ts']) {
+  for (const file of ['src/components/App.tsx', 'src/components/OrderLogDetails.tsx', 'src/components/NotificationChannel.tsx', 'src/notifications/notify.ts']) {
     const source = ts.createSourceFile(file, readFileSync(file, 'utf8'), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     const check = (node: ts.Node) => {
       if (ts.isCallExpression(node) && node.expression.getText(source) === 't' && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {

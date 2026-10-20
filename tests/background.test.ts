@@ -140,10 +140,22 @@ it('保存两个通知地址并清空后生效；日志不包含配置值', asyn
   const ordersWebhook = 'https://open.feishu.cn/open-apis/bot/v2/hook/private-test-channel';
   const result = await call({ type: 'notifications', notifications: { ordersWebhook, alertsWebhook: '' } });
   expect(result.ok).toBe(true);
-  expect(result.data.settings.notifications.ordersWebhook).toBe(ordersWebhook);
+  expect(result.data.settings.notifications.orders).toMatchObject({ provider: 'feishu', webhook: ordersWebhook });
   expect(JSON.stringify(result.data.logs)).not.toContain('private-test-channel');
   const cleared = await call({ type: 'notifications', notifications: { ordersWebhook: '', alertsWebhook: '' } });
-  expect(cleared.data.settings.notifications.ordersWebhook).toBe('');
+  expect(cleared.data.settings.notifications.orders.webhook).toBe('');
+});
+it('面板保存不同平台的独立配置，非法渠道配置不覆盖既有设置或泄露凭据', async () => {
+  const notifications = {
+    orders: { provider: 'telegram', botToken: '123456789:TEST_ONLY_BOT_TOKEN_1234567890', chatId: '-1001234567890' },
+    alerts: { provider: 'dingtalk', webhook: 'https://oapi.dingtalk.com/robot/send?access_token=test-private-channel', secret: 'SEC-test-secret' },
+  };
+  const saved = await call({ type: 'notifications', notifications });
+  expect(saved.ok).toBe(true);
+  expect(saved.data.settings.notifications).toEqual(notifications);
+  expect(JSON.stringify(saved.data.logs)).not.toMatch(/TEST_ONLY_BOT_TOKEN|SEC-test-secret|test-private-channel/);
+  expect((await call({ type: 'notifications', notifications: { ...notifications, orders: { ...notifications.orders, chatId: '' } } })).ok).toBe(false);
+  expect((await call({ type: 'view' })).data.settings.notifications).toEqual(notifications);
 });
 it('未配置的认证异常只记本地日志；接口失败不阻断既有账户', async () => {
   const fetchSpy = vi.fn(); vi.stubGlobal('fetch', fetchSpy);
@@ -155,6 +167,31 @@ it('未配置的认证异常只记本地日志；接口失败不阻断既有账�
   const view = (await call({ type: 'view' })).data;
   expect(view.logs.filter((l: any) => l.code === 'auth-expired')).toHaveLength(1);
   expect(fetchSpy).not.toHaveBeenCalled();
+});
+
+it('通知测试使用未保存草稿，无需账户连接，不能由页面或非法配置触发', async () => {
+  const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ok: true })); vi.stubGlobal('fetch', send);
+  const before = (await call({ type: 'view' })).data.settings;
+  const target = { provider: 'telegram', botToken: '123456789:TEST_ONLY_BOT_TOKEN_1234567890', chatId: '-1001234567890' };
+  expect(await call({ type: 'notification-test', channel: 'orders', target })).toMatchObject({ ok: true, test: { sent: true } });
+  expect((await call({ type: 'view' })).data.settings).toEqual(before);
+  expect(String(send.mock.calls[0]![0])).toContain('api.telegram.org');
+  expect((await call({ type: 'notification-test', channel: 'alerts', target }, sender())).ok).toBe(false);
+  expect((await call({ type: 'notification-test', channel: 'alerts', target: { ...target, chatId: '' } })).ok).toBe(false);
+  expect(send).toHaveBeenCalledTimes(1);
+});
+
+it('通知测试等待网络期间不阻塞行情、视图和停止监控命令', async () => {
+  let finish!: () => void;
+  const gate = new Promise<void>(resolve => { finish = resolve; });
+  const send = vi.fn<typeof fetch>().mockImplementation(async () => { await gate; return Response.json({ errcode: 0 }); });
+  vi.stubGlobal('fetch', send);
+  const pending = call({ type: 'notification-test', channel: 'alerts', target: { provider: 'wecom', webhook: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-notification-queue' } });
+  try {
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const result = await Promise.race([call({ type: 'automatic', enabled: false }), new Promise<null>(resolve => setTimeout(() => resolve(null), 500))]);
+    expect(result).toMatchObject({ ok: true, data: { settings: { automatic: false } } });
+  } finally { finish(); await pending; }
 });
 
 

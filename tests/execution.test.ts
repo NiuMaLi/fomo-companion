@@ -8,6 +8,7 @@ import { parseReceipt } from '../src/trading/receipt';
 import { createCoordinator, recoverExecution } from '../src/trading/coordinator';
 import { database } from '../src/storage/database';
 import { SOL_ASSET } from './fixtures';
+import { emptyNotificationTarget } from '../src/shared/notifications';
 
 const makeOrder = (patch: Partial<Order> = {}): Order => ({ id: crypto.randomUUID(), accountId: 'test', asset: SOL_ASSET,
   kind: 'limit-buy', targetPrice: '110', amountUsd: '4', status: 'waiting', createdAt: Date.now(), ...patch });
@@ -234,5 +235,28 @@ it('重启待发送通知复用成交价量值与剩余快照，不重查成交�
     const body = JSON.parse((send.mock.calls[0] as any)[1].body).content.text;
     for (const value of ['$100', '0.04 SOL', '4 USDC', '0 SOL']) expect(body).toContain(value);
     expect((await db.get('orders', order.id))?.notificationHandled).toBe(true);
+  } finally { vi.unstubAllGlobals(); db.close(); }
+});
+
+it.each(['dingtalk', 'wecom', 'telegram'] as const)('%s 接入真实成交核对与重启通知，不依赖旧飞书地址', async provider => {
+  const db = await database(crypto.randomUUID());
+  const order = makeOrder({ status: 'submitted', transactionHash: hash, submittedAt: Date.now() });
+  await db.put('orders', order);
+  const target = provider === 'telegram' ? { provider, botToken: '123456789:TEST_ONLY_BOT_TOKEN_1234567890', chatId: '-1001234567890' }
+    : provider === 'dingtalk' ? { provider, webhook: 'https://oapi.dingtalk.com/robot/send?access_token=test-coordinator-channel', secret: '' }
+    : { provider, webhook: 'https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test-coordinator-channel' };
+  await db.put('state', { ...DEFAULT_SETTINGS, notifications: { orders: target, alerts: emptyNotificationTarget('disabled') } }, 'settings');
+  const send = vi.fn<typeof fetch>().mockResolvedValue(Response.json(provider === 'telegram' ? { ok: true } : { errcode: 0 }));
+  vi.stubGlobal('fetch', send);
+  const call = vi.fn(async (): Promise<ExecutionResult> => ({ state: 'confirmed', direction: 'buy', priceUsd: '100', quantity: '0.04', amountUsd: '4', remainingQuantity: '0.04' }));
+  try {
+    const coordinator = createCoordinator({ db: Promise.resolve(db), call, allowed: () => true, page: () => 1 });
+    await coordinator.reconcile();
+    expect((await db.get('orders', order.id))).toMatchObject({ status: 'confirmed', notifyOrder: true, notificationHandled: true });
+    await createCoordinator({ db: Promise.resolve(db), call, allowed: () => true, page: () => 1 }).reconcile();
+    expect(send).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(send.mock.calls[0]![1]!.body as string);
+    const text = provider === 'telegram' ? body.text : body.text.content;
+    for (const value of ['$100', '0.04 SOL', '4 USDC', hash]) expect(text).toContain(value);
   } finally { vi.unstubAllGlobals(); db.close(); }
 });

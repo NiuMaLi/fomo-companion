@@ -2,7 +2,7 @@ import { assetKey, sameAsset, EXECUTION, commandSchema, feedSchema, type Asset, 
 import { database, readSettings } from '../src/storage/database';
 import { createOrder, evaluate, fresh } from '../src/trading/engine';
 import { orderSnapshot, writeLog } from '../src/storage/logs';
-import { notify } from '../src/notifications/feishu';
+import { notify, testNotification } from '../src/notifications/notify';
 import { createCoordinator, recoverExecution } from '../src/trading/coordinator';
 import { ExecutionError, executionResultSchema, type ExecutionRequest } from '../src/shared/execution';
 
@@ -105,6 +105,18 @@ export default defineBackground(() => {
   });
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (sender.id !== browser.runtime.id) return false;
+    if (message?.type === 'notification-test') {
+      // A slow bot must not hold the market/trading command queue.
+      const runTest = async () => {
+        if (sender.tab || !sender.url?.startsWith(browser.runtime.getURL('/'))) throw new Error('不允许的操作来源');
+        const cmd = commandSchema.parse(message);
+        if (cmd.type !== 'notification-test') throw new Error('请检查通知渠道配置');
+        return testNotification(await dbPromise, cmd.channel, cmd.target);
+      };
+      void runTest().then(test => sendResponse({ ok: true, test }), () =>
+        sendResponse({ ok: false, error: '无法测试通知，请检查配置或重新打开扩展' }));
+      return true;
+    }
     const run = async () => {
       const db = await dbPromise;
       if (message?.channel === 'feed') {
@@ -221,7 +233,7 @@ export default defineBackground(() => {
       if (cmd.type === 'notifications') {
         const settings = await readSettings(db);
         await db.put('state', { ...settings, notifications: cmd.notifications }, 'settings');
-        await log('通知配置已保存；空地址对应的通知已关闭', 'notifications-saved');
+        await log('通知配置已保存；未配置的通知已关闭', 'notifications-saved');
       }
 
       if (cmd.type === 'refresh') { await log('已请求刷新 FOMO 连接', 'refresh'); await refreshPage(); }
