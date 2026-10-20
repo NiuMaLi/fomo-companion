@@ -10,7 +10,7 @@ const fill = { channel: 'orders' as const, orderId: 'confirmed-order', accountId
 let db: DB;
 const send = vi.fn<typeof fetch>();
 beforeEach(async () => { db = await database(crypto.randomUUID()); send.mockReset().mockResolvedValue(new Response('{"code":0}')); });
-afterEach(() => db.close());
+afterEach(() => { db.close(); vi.restoreAllMocks(); });
 it('未配置不请求、不记录待补发通知', async () => {
   expect(await notify(db, alert, send)).toBe('disabled');
   expect(await notify(db, fill, send)).toBe('disabled');
@@ -28,6 +28,22 @@ it('两类通知使用独立地址，不向另一渠道回退', async () => {
   const options = send.mock.calls[1]?.[1]!;
   expect(JSON.parse(options.body as string)).toMatchObject({ msg_type: 'text', content: { text: expect.stringContaining('登录凭据失效') } });
   expect(options.redirect).toBe('error');
+});
+it.each([
+  ['Asia/Shanghai', 'zh-CN', '2026-10-21 07:30:00 GMT+08:00', '2026-10-21 07:31:00 GMT+08:00'],
+  ['Asia/Shanghai', 'en', '2026-10-21 07:30:00 GMT+08:00', '2026-10-21 07:31:00 GMT+08:00'],
+  ['America/New_York', 'en', '2026-10-20 19:30:00 GMT-04:00', '2026-10-20 19:31:00 GMT-04:00'],
+  ['UTC', 'zh-CN', '2026-10-20 23:30:00 GMT', '2026-10-20 23:31:00 GMT'],
+] as const)('两类通知跟随系统时区 %s、语言 %s，并标注时区', async (timeZone, language, confirmedTime, alertTime) => {
+  const DateTimeFormat = Intl.DateTimeFormat;
+  vi.spyOn(Intl, 'DateTimeFormat').mockImplementation((locales, options) => new DateTimeFormat(locales, { ...options, timeZone }));
+  await db.put('state', { ...DEFAULT_SETTINGS, language, notifications: { ordersWebhook, alertsWebhook } }, 'settings');
+  const confirmedAt = Date.parse('2026-10-20T23:30:00Z');
+  const now = confirmedAt + 60000;
+  await notify(db, { ...fill, confirmedAt }, send, now);
+  await notify(db, alert, send, now);
+  expect(JSON.parse(send.mock.calls[0]![1]!.body as string).content.text).toContain(confirmedTime);
+  expect(JSON.parse(send.mock.calls[1]![1]!.body as string).content.text).toContain(alertTime);
 });
 it('并发、重启后成交通知不重复，同类告警五分钟内去重', async () => {
   await db.put('state', { ...DEFAULT_SETTINGS, notifications: { ordersWebhook, alertsWebhook } }, 'settings');

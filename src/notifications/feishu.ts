@@ -8,6 +8,16 @@ export type Notice =
       direction?: 'buy' | 'sell'; priceUsd?: string; quantity?: string; amountUsd?: string; remainingQuantity?: string };
 type Delivery = { at: number; status: 'sending' | 'sent' | 'failed' };
 
+// Use the browser's local time zone independently of the notification language.
+function notificationTime(value: number) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hourCycle: 'h23', timeZoneName: 'longOffset',
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)!.value;
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')} ${part('timeZoneName')}`;
+}
+
 // Called only with sanitized system errors or a confirmed execution receipt, never a quote/trigger.
 export async function notify(db: DB, notice: Notice, send: typeof fetch = fetch, now = Date.now()) {
   const settings = await readSettings(db);
@@ -26,9 +36,9 @@ export async function notify(db: DB, notice: Notice, send: typeof fetch = fetch,
       0: notice.symbol, 1: t(notice.direction === 'buy' ? '买入' : notice.direction === 'sell' ? '卖出' : '未记录'),
       2: notice.priceUsd === undefined ? t('未记录') : '$' + notice.priceUsd, 3: notice.quantity ?? t('未记录'), 4: notice.symbol,
       5: notice.amountUsd ?? t('未记录'), 6: notice.remainingQuantity === undefined ? t('未获取') : notice.remainingQuantity + ' ' + notice.symbol,
-      7: notice.orderId, 8: notice.transactionHash, 9: new Date(notice.confirmedAt).toISOString(),
+      7: notice.orderId, 8: notice.transactionHash, 9: notificationTime(notice.confirmedAt),
     })
-    : t('FOMO 系统告警\n{0}\n时间：{1}', { 0: t(redact(notice.message)), 1: new Date(now).toISOString() });
+    : t('FOMO 系统告警\n{0}\n时间：{1}', { 0: t(redact(notice.message)), 1: notificationTime(now) });
   try {
     const response = await send(url, { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ msg_type: 'text', content: { text } }), redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(8000) });
